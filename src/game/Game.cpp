@@ -59,18 +59,6 @@ const Arena& Game::getArena() const {
     return arena;
 }
 
-void Game::update(float dt) {
-    if (state != GameState::RUNNING) return;
-
-    shootCooldownP1 = std::max(0.0f, shootCooldownP1 - dt);
-    shootCooldownP2 = std::max(0.0f, shootCooldownP2 - dt);
-
-    updatePlayers(dt);
-    updateBullets(dt);
-    handleCollisions();
-    checkGameOver();
-}
-
 static float mapMouseXToArmRel(int mouseX, int winW, float minRel, float maxRel) {
     if (winW <= 1) return 0.0f;
     float t = float(mouseX) / float(winW - 1);
@@ -119,66 +107,78 @@ static void separatePlayers(Player& a, Player& b) {
     }
 }
 
-void Game::spawnBulletFromPlayer(const Player& p) {
-    if (p.lives <= 0) return;
-
-    Vec2 f = p.forward();
-    Vec2 left(-f.y, f.x);
-
-    Vec2 shoulder = p.pos + left * (p.headRadius * 0.55f);
-    Vec2 armDir = p.armWorldDir();
-
-    Vec2 spawnPos = shoulder + armDir * (p.headRadius * 1.75f);
-
-    float bulletSpeed = 2.0f * p.moveSpeed;
-    Vec2 vel = armDir * bulletSpeed;
-
-    Bullet b;
-    b.spawn(spawnPos, vel, p.headRadius * 0.15f, (int)p.id);
-    bullets.push_back(b);
-}
-
 static void resolveWorldForPlayer(Player& p, const Arena& a, const std::vector<Obstacle>& obs) {
     keepInsideArena(p, a);
-
     for (int it = 0; it < 3; ++it) {
-        for (const auto& ob : obs)
-            pushOutOfObstacle(p, ob);
-
+        for (const auto& ob : obs) pushOutOfObstacle(p, ob);
         keepInsideArena(p, a);
     }
 }
 
-void Game::updatePlayers(float dt) {
-    bool p1Forward   = input.keys['w'] || input.specialKeys[GLUT_KEY_UP];
-    bool p1Backward  = input.keys['s'] || input.specialKeys[GLUT_KEY_DOWN];
-    bool p1TurnLeft  = input.keys['a'] || input.specialKeys[GLUT_KEY_LEFT];
-    bool p1TurnRight = input.keys['d'] || input.specialKeys[GLUT_KEY_RIGHT];
+void Game::spawnBulletFromPlayer(const Player& p) {
+    if (p.lives <= 0) return;
 
+    float R = p.headRadius;
+
+    Vec2 f = p.forward();
+    // FIX: correct perpendiculars for Y-down
+    Vec2 left(f.y, -f.x);
+    Vec2 right(-f.y, f.x);
+
+    Vec2 weaponBase = p.pos + right * R;
+    Vec2 weaponDir = p.armWorldDir();
+
+    float weaponLen = R * 1.65f;
+
+    float br = R * 0.15f;
+    Vec2 weaponTip = weaponBase + weaponDir * weaponLen;
+    Vec2 spawnPos = weaponTip - weaponDir * (br * 0.6f);
+
+    float bulletSpeed = 2.0f * p.moveSpeed;
+    Vec2 vel = weaponDir * bulletSpeed;
+
+    Bullet b;
+    b.spawn(spawnPos, vel, br, (int)p.id);
+    bullets.push_back(b);
+}
+
+void Game::update(float dt) {
+    if (state != GameState::RUNNING) return;
+
+    shootCooldownP1 = std::max(0.0f, shootCooldownP1 - dt);
+    shootCooldownP2 = std::max(0.0f, shootCooldownP2 - dt);
+
+    updatePlayers(dt);
+    updateBullets(dt);
+    handleCollisions();
+    checkGameOver();
+}
+
+void Game::updatePlayers(float dt) {
+    bool p1Forward   = input.keys['w'] || input.keys['W'] || input.specialKeys[GLUT_KEY_UP];
+    bool p1Backward  = input.keys['s'] || input.keys['S'] || input.specialKeys[GLUT_KEY_DOWN];
+    bool p1TurnLeft  = input.keys['a'] || input.keys['A'] || input.specialKeys[GLUT_KEY_LEFT];
+    bool p1TurnRight = input.keys['d'] || input.keys['D'] || input.specialKeys[GLUT_KEY_RIGHT];
     player1.applyMovement(dt, p1Forward, p1Backward, p1TurnLeft, p1TurnRight);
 
-    bool p2Forward   = input.keys['o'];
-    bool p2Backward  = input.keys['l'];
-    bool p2TurnLeft  = input.keys['k'];
-    bool p2TurnRight = input.keys[';'] || input.keys['p'] || input.keys[231];
-
+    bool p2Forward   = input.keys['o'] || input.keys['O'];
+    bool p2Backward  = input.keys['l'] || input.keys['L'];
+    bool p2TurnLeft  = input.keys['k'] || input.keys['K'];
+    bool p2TurnRight = input.keys[';'] || input.keys['p'] || input.keys['P'] || input.keys[231];
     player2.applyMovement(dt, p2Forward, p2Backward, p2TurnLeft, p2TurnRight);
 
     int winW = glutGet(GLUT_WINDOW_WIDTH);
-    player1.setArmRelative(
-        mapMouseXToArmRel(input.mouseX, winW,
-                          player1.armMinRelRad,
-                          player1.armMaxRelRad)
-    );
+    float p1Rel = mapMouseXToArmRel(input.mouseX, winW, player1.armMinRelRad, player1.armMaxRelRad);
+    player1.setArmRelative(p1Rel);
 
-    float armSpeed = Angle::degToRad(120.0f);
-    if (input.keys['4']) player2.addArmRelative(+armSpeed * dt);
-    if (input.keys['6']) player2.addArmRelative(-armSpeed * dt);
+    float weaponSpeed = Angle::degToRad(120.0f);
+    if (input.keys['4']) player2.addArmRelative(+weaponSpeed * dt);
+    if (input.keys['6']) player2.addArmRelative(-weaponSpeed * dt);
 
     resolveWorldForPlayer(player1, arena, obstacles);
     resolveWorldForPlayer(player2, arena, obstacles);
 
-    for (int i = 0; i < 3; ++i) {
+    for (int it = 0; it < 3; ++it) {
         separatePlayers(player1, player2);
         resolveWorldForPlayer(player1, arena, obstacles);
         resolveWorldForPlayer(player2, arena, obstacles);
@@ -205,8 +205,7 @@ void Game::updateBullets(float dt) {
     for (auto& b : bullets) {
         if (!b.alive) continue;
         b.update(dt);
-        if (b.isOutsideArena(arena))
-            b.alive = false;
+        if (b.isOutsideArena(arena)) b.alive = false;
     }
 }
 
@@ -224,12 +223,12 @@ void Game::handleCollisions() {
         if (!b.alive) continue;
 
         Player* targets[2] = { &player1, &player2 };
-        for (Player* p : targets) {
-            if (p->lives <= 0) continue;
-            if ((int)p->id == b.ownerId) continue;
+        for (Player* pl : targets) {
+            if (pl->lives <= 0) continue;
+            if ((int)pl->id == b.ownerId) continue;
 
-            if (Collision::circleCircle(b.pos, b.radius, p->pos, p->headRadius)) {
-                p->lives--;
+            if (Collision::circleCircle(b.pos, b.radius, pl->pos, pl->headRadius)) {
+                pl->lives--;
                 b.alive = false;
             }
         }
@@ -237,37 +236,26 @@ void Game::handleCollisions() {
 }
 
 void Game::checkGameOver() {
-    if (player1.lives <= 0) {
-        state = GameState::GAME_OVER;
-        winnerId = 2;
-    }
-    if (player2.lives <= 0) {
-        state = GameState::GAME_OVER;
-        winnerId = 1;
-    }
+    if (player1.lives <= 0) { state = GameState::GAME_OVER; winnerId = 2; }
+    if (player2.lives <= 0) { state = GameState::GAME_OVER; winnerId = 1; }
 }
 
 void Game::render() const {
     Renderer::drawArena(arena);
-
-    for (const auto& ob : obstacles)
-        Renderer::drawObstacle(ob);
+    for (const auto& ob : obstacles) Renderer::drawObstacle(ob);
 
     if (player1.lives > 0) Renderer::drawPlayer(player1);
     if (player2.lives > 0) Renderer::drawPlayer(player2);
 
-    for (const auto& b : bullets)
-        if (b.alive) Renderer::drawBullet(b);
+    for (const auto& b : bullets) if (b.alive) Renderer::drawBullet(b);
 
     Renderer::drawHud(arena, player1.lives, player2.lives);
-
-    if (state == GameState::GAME_OVER)
-        Renderer::drawGameOver(arena, winnerId);
+    if (state == GameState::GAME_OVER) Renderer::drawGameOver(arena, winnerId);
 }
 
 void Game::onKeyDown(unsigned char key) {
     input.keys[key] = true;
-    if (key == 'r') reset();
+    if (key == 'r' || key == 'R') reset();
 }
 
 void Game::onKeyUp(unsigned char key) {

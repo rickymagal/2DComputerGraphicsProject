@@ -13,10 +13,8 @@ void Player::setDefaults(PlayerId pid) {
 
     armRelRad = 0.0f;
 
-    // Wider range so it doesn't "stop immediately".
-    // If later you want to match the PDF strictly (e.g. +/-45 deg), change these.
-    armMinRelRad = Angle::degToRad(-140.0f);
-    armMaxRelRad = Angle::degToRad(140.0f);
+    armMinRelRad = Angle::degToRad(-45.0f);
+    armMaxRelRad = Angle::degToRad(45.0f);
 
     moveSpeed = 200.0f;
     turnSpeedRad = Angle::degToRad(240.0f);
@@ -36,6 +34,8 @@ float Player::bodyRadius() const {
     return headRadius;
 }
 
+// IMPORTANT: This defines what "forward" means for movement AND drawing.
+// With this, headingRad = 0 means "to the right" (east) in Y-down screen coords.
 Vec2 Player::forward() const {
     return Vec2(std::cos(headingRad), -std::sin(headingRad));
 }
@@ -57,7 +57,6 @@ void Player::applyMovement(float dt, bool moveForward, bool moveBackward, bool t
     if (move != 0.0f) {
         Vec2 dir = forward();
         pos += dir * (move * moveSpeed * dt);
-
         walkPhase += dt * 8.0f;
         walking = true;
     } else {
