@@ -1,6 +1,7 @@
 #include "../../include/game/Game.h"
 #include "../../include/game/Renderer.h"
 #include "../../include/math/Collision.h"
+#include "../../include/math/Angle.h"
 #include "../../include/io/SvgLoader.h"
 
 #include <GL/glut.h>
@@ -50,7 +51,15 @@ void Game::update(float dt) {
     checkGameOver();
 }
 
+static float mapMouseXToArmRel(int mouseX, int winW, float minRel, float maxRel) {
+    if (winW <= 1) return 0.0f;
+    float t = float(mouseX) / float(winW - 1);          // 0..1
+    float rel = minRel + (maxRel - minRel) * t;         // min..max
+    return rel;
+}
+
 void Game::updatePlayers(float dt) {
+    // ---- Player 1 movement: WASD + Arrow keys fallback ----
     bool p1Forward  = input.keys['w'] || input.specialKeys[GLUT_KEY_UP];
     bool p1Backward = input.keys['s'] || input.specialKeys[GLUT_KEY_DOWN];
     bool p1TurnLeft = input.keys['a'] || input.specialKeys[GLUT_KEY_LEFT];
@@ -58,13 +67,26 @@ void Game::updatePlayers(float dt) {
 
     player1.applyMovement(dt, p1Forward, p1Backward, p1TurnLeft, p1TurnRight);
 
-    player2.applyMovement(
-        dt,
-        input.keys['o'],
-        input.keys['l'],
-        input.keys['k'],
-        input.keys[';'] || input.keys[231]
-    );
+    // ---- Player 2 movement: as spec (o/l/k/ç) + fallbacks for layouts ----
+    // Many keyboards won’t deliver 'ç' cleanly via GLUT. Provide fallbacks:
+    // turn right: ';' or 'p'
+    bool p2Forward  = input.keys['o'];
+    bool p2Backward = input.keys['l'];
+    bool p2TurnLeft = input.keys['k'];
+    bool p2TurnRight = input.keys[';'] || input.keys['p'] || input.keys[231];
+
+    player2.applyMovement(dt, p2Forward, p2Backward, p2TurnLeft, p2TurnRight);
+
+    // ---- Arm controls (always updated, independent of moving) ----
+    // P1: arm angle from mouse X across the window.
+    int winW = glutGet(GLUT_WINDOW_WIDTH);
+    float p1Rel = mapMouseXToArmRel(input.mouseX, winW, player1.armMinRelRad, player1.armMaxRelRad);
+    player1.setArmRelative(p1Rel);
+
+    // P2: keys '4' and '6' rotate arm.
+    float armSpeed = Angle::degToRad(220.0f);
+    if (input.keys['4']) player2.addArmRelative(+armSpeed * dt);
+    if (input.keys['6']) player2.addArmRelative(-armSpeed * dt);
 }
 
 void Game::updateBullets(float dt) {

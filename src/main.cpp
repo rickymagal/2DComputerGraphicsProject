@@ -24,6 +24,7 @@ static void applyCamera() {
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
 
+    // SVG-like coordinates: y grows downward
     gluOrtho2D(left, right, bottom, top);
 
     glMatrixMode(GL_MODELVIEW);
@@ -97,7 +98,13 @@ int main(int argc, char** argv) {
     glutInitWindowSize(windowWidth, windowHeight);
     glutCreateWindow("Trabalho CG 2D");
 
-    glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+    // Lighter background so black obstacles are visible
+    glClearColor(0.22f, 0.22f, 0.22f, 1.0f);
+
+    glEnable(GL_LINE_SMOOTH);
+    glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     glutDisplayFunc(displayCallback);
     glutIdleFunc(idleCallback);
