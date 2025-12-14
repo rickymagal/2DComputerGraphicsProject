@@ -6,6 +6,7 @@
 
 #include <GL/glut.h>
 #include <algorithm>
+#include <cmath>
 
 Game::Game()
     : state(GameState::RUNNING),
@@ -73,8 +74,49 @@ void Game::update(float dt) {
 static float mapMouseXToArmRel(int mouseX, int winW, float minRel, float maxRel) {
     if (winW <= 1) return 0.0f;
     float t = float(mouseX) / float(winW - 1);
-    float rel = minRel + (maxRel - minRel) * t;
-    return rel;
+    return minRel + (maxRel - minRel) * t;
+}
+
+static void keepInsideArena(Player& p, const Arena& a) {
+    float pr = p.headRadius;
+    Vec2 d = p.pos - a.center;
+    float dist = std::sqrt(d.lengthSq());
+    float maxDist = a.radius - pr;
+
+    if (dist > maxDist) {
+        Vec2 n = (dist > 1e-6f) ? (d / dist) : Vec2(1.0f, 0.0f);
+        p.pos = a.center + n * maxDist;
+    }
+}
+
+static void pushOutOfObstacle(Player& p, const Obstacle& ob) {
+    float pr = p.headRadius;
+    Vec2 d = p.pos - ob.pos;
+    float dist = std::sqrt(d.lengthSq());
+    float minDist = pr + ob.radius;
+
+    if (dist < minDist) {
+        Vec2 n = (dist > 1e-6f) ? (d / dist) : Vec2(1.0f, 0.0f);
+        p.pos += n * (minDist - dist);
+    }
+}
+
+static void separatePlayers(Player& a, Player& b) {
+    if (a.lives <= 0 || b.lives <= 0) return;
+
+    float ra = a.headRadius;
+    float rb = b.headRadius;
+
+    Vec2 d = a.pos - b.pos;
+    float dist = std::sqrt(d.lengthSq());
+    float minDist = ra + rb;
+
+    if (dist < minDist) {
+        Vec2 n = (dist > 1e-6f) ? (d / dist) : Vec2(1.0f, 0.0f);
+        float push = (minDist - dist) * 0.5f;
+        a.pos += n * push;
+        b.pos -= n * push;
+    }
 }
 
 void Game::spawnBulletFromPlayer(const Player& p) {
@@ -91,40 +133,57 @@ void Game::spawnBulletFromPlayer(const Player& p) {
     float bulletSpeed = 2.0f * p.moveSpeed;
     Vec2 vel = armDir * bulletSpeed;
 
-    float br = p.headRadius * 0.15f;
-
     Bullet b;
-    b.spawn(spawnPos, vel, br, (int)p.id);
+    b.spawn(spawnPos, vel, p.headRadius * 0.15f, (int)p.id);
     bullets.push_back(b);
 }
 
+static void resolveWorldForPlayer(Player& p, const Arena& a, const std::vector<Obstacle>& obs) {
+    keepInsideArena(p, a);
+
+    for (int it = 0; it < 3; ++it) {
+        for (const auto& ob : obs)
+            pushOutOfObstacle(p, ob);
+
+        keepInsideArena(p, a);
+    }
+}
+
 void Game::updatePlayers(float dt) {
-    // ---- Player 1 movement: WASD + Arrow keys fallback ----
-    bool p1Forward  = input.keys['w'] || input.specialKeys[GLUT_KEY_UP];
-    bool p1Backward = input.keys['s'] || input.specialKeys[GLUT_KEY_DOWN];
-    bool p1TurnLeft = input.keys['a'] || input.specialKeys[GLUT_KEY_LEFT];
+    bool p1Forward   = input.keys['w'] || input.specialKeys[GLUT_KEY_UP];
+    bool p1Backward  = input.keys['s'] || input.specialKeys[GLUT_KEY_DOWN];
+    bool p1TurnLeft  = input.keys['a'] || input.specialKeys[GLUT_KEY_LEFT];
     bool p1TurnRight = input.keys['d'] || input.specialKeys[GLUT_KEY_RIGHT];
 
     player1.applyMovement(dt, p1Forward, p1Backward, p1TurnLeft, p1TurnRight);
 
-    // ---- Player 2 movement: spec + layout fallbacks ----
-    bool p2Forward  = input.keys['o'];
-    bool p2Backward = input.keys['l'];
-    bool p2TurnLeft = input.keys['k'];
+    bool p2Forward   = input.keys['o'];
+    bool p2Backward  = input.keys['l'];
+    bool p2TurnLeft  = input.keys['k'];
     bool p2TurnRight = input.keys[';'] || input.keys['p'] || input.keys[231];
 
     player2.applyMovement(dt, p2Forward, p2Backward, p2TurnLeft, p2TurnRight);
 
-    // ---- Arm controls (always updated) ----
     int winW = glutGet(GLUT_WINDOW_WIDTH);
-    float p1Rel = mapMouseXToArmRel(input.mouseX, winW, player1.armMinRelRad, player1.armMaxRelRad);
-    player1.setArmRelative(p1Rel);
+    player1.setArmRelative(
+        mapMouseXToArmRel(input.mouseX, winW,
+                          player1.armMinRelRad,
+                          player1.armMaxRelRad)
+    );
 
-    float armSpeed = Angle::degToRad(220.0f);
+    float armSpeed = Angle::degToRad(120.0f);
     if (input.keys['4']) player2.addArmRelative(+armSpeed * dt);
     if (input.keys['6']) player2.addArmRelative(-armSpeed * dt);
 
-    // ---- Shooting (edge-triggered) ----
+    resolveWorldForPlayer(player1, arena, obstacles);
+    resolveWorldForPlayer(player2, arena, obstacles);
+
+    for (int i = 0; i < 3; ++i) {
+        separatePlayers(player1, player2);
+        resolveWorldForPlayer(player1, arena, obstacles);
+        resolveWorldForPlayer(player2, arena, obstacles);
+    }
+
     bool mouseLeft = input.mouseLeftPressed;
     bool key5 = input.keys['5'];
 
@@ -146,9 +205,8 @@ void Game::updateBullets(float dt) {
     for (auto& b : bullets) {
         if (!b.alive) continue;
         b.update(dt);
-        if (b.isOutsideArena(arena)) {
+        if (b.isOutsideArena(arena))
             b.alive = false;
-        }
     }
 }
 

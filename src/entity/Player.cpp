@@ -12,8 +12,11 @@ void Player::setDefaults(PlayerId pid) {
     headingRad = 0.0f;
 
     armRelRad = 0.0f;
-    armMinRelRad = Angle::degToRad(-85.0f);
-    armMaxRelRad = Angle::degToRad(85.0f);
+
+    // Wider range so it doesn't "stop immediately".
+    // If later you want to match the PDF strictly (e.g. +/-45 deg), change these.
+    armMinRelRad = Angle::degToRad(-140.0f);
+    armMaxRelRad = Angle::degToRad(140.0f);
 
     moveSpeed = 200.0f;
     turnSpeedRad = Angle::degToRad(240.0f);
@@ -33,8 +36,6 @@ float Player::bodyRadius() const {
     return headRadius;
 }
 
-// IMPORTANT: camera uses SVG-like coordinates (Y grows downward).
-// So forward must use -sin() to keep heading math intuitive on screen.
 Vec2 Player::forward() const {
     return Vec2(std::cos(headingRad), -std::sin(headingRad));
 }
@@ -44,7 +45,6 @@ void Player::applyMovement(float dt, bool moveForward, bool moveBackward, bool t
     if (turnLeft)  turn += 1.0f;
     if (turnRight) turn -= 1.0f;
 
-    // Allow turning even while standing still (so you can rotate, then walk straight).
     if (turn != 0.0f) {
         headingRad += turn * turnSpeedRad * dt;
         headingRad = Angle::wrap2Pi(headingRad);
@@ -58,7 +58,6 @@ void Player::applyMovement(float dt, bool moveForward, bool moveBackward, bool t
         Vec2 dir = forward();
         pos += dir * (move * moveSpeed * dt);
 
-        // Discrete stepping phase (used by renderer to swap feet)
         walkPhase += dt * 8.0f;
         walking = true;
     } else {
