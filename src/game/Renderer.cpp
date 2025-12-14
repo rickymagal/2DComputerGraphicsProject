@@ -98,13 +98,10 @@ static void drawRectOutline(const Vec2& center, const Vec2& dirUnit, float halfL
     glEnd();
 }
 
-static int footSwapNow(const Player& p) {
-    if (!p.walking) return 0;
-    int ms = glutGet(GLUT_ELAPSED_TIME);
-    float t = float(ms) * 0.001f;
-    float swapsPerSecond = 2.0f; // 2 swaps/s (tune if you want faster)
-    int k = (int)std::floor(t * swapsPerSecond);
-    return (k & 1);
+static int footSwapPhase(const Player& p) {
+    // Do NOT depend on p.walking; your runs show it isn't reliable.
+    // walkPhase is the correct semantic clock for the step cycle.
+    return (std::sin(p.walkPhase) >= 0.0f) ? 0 : 1;
 }
 
 void Renderer::drawArena(const Arena& arena) {
@@ -128,14 +125,14 @@ void Renderer::drawPlayer(const Player& player) {
     float R = player.headRadius;
 
     Vec2 f = player.forward();      // heading=0 -> north (0,-1)
-    Vec2 left(f.y, -f.x);
+    Vec2 left(f.y, -f.x);           // correct for Y-down
     Vec2 right(-f.y, f.x);
 
     float rFill, gFill, bFill;
     if ((int)player.id == 1) { rFill = 0.0f; gFill = 0.75f; bFill = 0.25f; }
     else { rFill = 0.85f; gFill = 0.20f; bFill = 0.20f; }
 
-    // Arms: fixed ellipses left/right, colored like body
+    // --- Arms: fixed ellipses left/right, colored like body ---
     float armRx = R * 0.95f;
     float armRy = R * 0.35f;
     Vec2 armL = player.pos + left  * (R * 1.05f);
@@ -152,23 +149,38 @@ void Renderer::drawPlayer(const Player& player) {
     drawEllipseOutlineYDown(armR, armRx, armRy, armsRot);
     glLineWidth(1.0f);
 
-    // Feet: short black rectangles at extreme front/back, tangent to circle, and SWAP
-    float footHalfLen = R * 0.55f;
+    // --- Feet: two distinct feet (left-foot and right-foot), placed at extremes touching circle,
+    //     and SWAP which one is forward/back while walking.
+    float footHalfLen = R * 0.55f;  // shorter
     float footHalfW   = R * 0.18f;
 
-    Vec2 baseFront = player.pos + f * (R + footHalfLen); // inner end touches circle at +f*R
-    Vec2 baseBack  = player.pos - f * (R + footHalfLen); // inner end touches circle at -f*R
+    // Feet must touch circle at the extreme: inner end at pos ± f*R.
+    // Center must be at pos ± f*(R + footHalfLen).
+    Vec2 extremeFront = player.pos + f * (R + footHalfLen);
+    Vec2 extremeBack  = player.pos - f * (R + footHalfLen);
 
-    int sw = footSwapNow(player);
-    Vec2 footFront = (sw == 0) ? baseFront : baseBack;
-    Vec2 footBack  = (sw == 0) ? baseBack  : baseFront;
+    // Side offset to make swap visible (each foot keeps its side).
+    float side = R * 0.28f;
 
-    // Draw back foot first, then body, then front foot last (so the "front" foot is on top)
+    // Define two feet identities:
+    Vec2 leftFootBase  = player.pos + left * side;
+    Vec2 rightFootBase = player.pos - left * side;
+
+    int sw = footSwapPhase(player);
+
+    // When sw==0: left-foot forward, right-foot back. When sw==1: swap.
+    Vec2 leftFootCenter  = (sw == 0) ? (leftFootBase  + (extremeFront - player.pos)) : (leftFootBase  + (extremeBack - player.pos));
+    Vec2 rightFootCenter = (sw == 0) ? (rightFootBase + (extremeBack  - player.pos)) : (rightFootBase + (extremeFront - player.pos));
+
+    // Draw back-foot first, then body, then front-foot last (front is on top).
+    Vec2 backFoot  = (sw == 0) ? rightFootCenter : leftFootCenter;
+    Vec2 frontFoot = (sw == 0) ? leftFootCenter  : rightFootCenter;
+
     glLineWidth(3.0f);
     glColor3f(0.0f, 0.0f, 0.0f);
-    drawRectFilled(footBack, f, footHalfLen, footHalfW);
+    drawRectFilled(backFoot, f, footHalfLen, footHalfW);
 
-    // Body
+    // --- Body ---
     glColor3f(rFill, gFill, bFill);
     drawCircleFilledYDown(player.pos, R);
 
@@ -179,16 +191,17 @@ void Renderer::drawPlayer(const Player& player) {
 
     glLineWidth(3.0f);
     glColor3f(0.0f, 0.0f, 0.0f);
-    drawRectFilled(footFront, f, footHalfLen, footHalfW);
+    drawRectFilled(frontFoot, f, footHalfLen, footHalfW);
     glLineWidth(1.0f);
 
-    // Weapon: anchored at center of right arm ellipse; color matches body (P2 weapon red)
+    // --- Weapon: anchored at center of right arm ellipse; color matches body (P2 weapon red) ---
     Vec2 weaponDir = player.armWorldDir();
     Vec2 weaponBase = armR;
 
     float weaponLen = R * 1.45f;
     float weaponHalfLen = weaponLen * 0.5f;
     float weaponHalfW = R * 0.14f;
+
     Vec2 weaponCenter = weaponBase + weaponDir * weaponHalfLen;
 
     glColor3f(rFill, gFill, bFill);
