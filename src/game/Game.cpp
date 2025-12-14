@@ -5,9 +5,15 @@
 #include "../../include/io/SvgLoader.h"
 
 #include <GL/glut.h>
+#include <algorithm>
 
 Game::Game()
-    : state(GameState::RUNNING), winnerId(0) {}
+    : state(GameState::RUNNING),
+      winnerId(0),
+      prevMouseLeft(false),
+      prevKey5(false),
+      shootCooldownP1(0.0f),
+      shootCooldownP2(0.0f) {}
 
 bool Game::loadFromSvg(const std::string& path) {
     SvgSceneData data;
@@ -29,9 +35,19 @@ bool Game::loadFromSvg(const std::string& path) {
 void Game::reset() {
     state = GameState::RUNNING;
     winnerId = 0;
+
     bullets.clear();
+
     player1.lives = 3;
     player2.lives = 3;
+
+    prevMouseLeft = false;
+    prevKey5 = false;
+
+    shootCooldownP1 = 0.0f;
+    shootCooldownP2 = 0.0f;
+
+    input.clear();
 }
 
 bool Game::isRunning() const {
@@ -45,6 +61,9 @@ const Arena& Game::getArena() const {
 void Game::update(float dt) {
     if (state != GameState::RUNNING) return;
 
+    shootCooldownP1 = std::max(0.0f, shootCooldownP1 - dt);
+    shootCooldownP2 = std::max(0.0f, shootCooldownP2 - dt);
+
     updatePlayers(dt);
     updateBullets(dt);
     handleCollisions();
@@ -53,9 +72,30 @@ void Game::update(float dt) {
 
 static float mapMouseXToArmRel(int mouseX, int winW, float minRel, float maxRel) {
     if (winW <= 1) return 0.0f;
-    float t = float(mouseX) / float(winW - 1);          // 0..1
-    float rel = minRel + (maxRel - minRel) * t;         // min..max
+    float t = float(mouseX) / float(winW - 1);
+    float rel = minRel + (maxRel - minRel) * t;
     return rel;
+}
+
+void Game::spawnBulletFromPlayer(const Player& p) {
+    if (p.lives <= 0) return;
+
+    Vec2 f = p.forward();
+    Vec2 left(-f.y, f.x);
+
+    Vec2 shoulder = p.pos + left * (p.headRadius * 0.55f);
+    Vec2 armDir = p.armWorldDir();
+
+    Vec2 spawnPos = shoulder + armDir * (p.headRadius * 1.75f);
+
+    float bulletSpeed = 2.0f * p.moveSpeed;
+    Vec2 vel = armDir * bulletSpeed;
+
+    float br = p.headRadius * 0.15f;
+
+    Bullet b;
+    b.spawn(spawnPos, vel, br, (int)p.id);
+    bullets.push_back(b);
 }
 
 void Game::updatePlayers(float dt) {
@@ -67,9 +107,7 @@ void Game::updatePlayers(float dt) {
 
     player1.applyMovement(dt, p1Forward, p1Backward, p1TurnLeft, p1TurnRight);
 
-    // ---- Player 2 movement: as spec (o/l/k/ç) + fallbacks for layouts ----
-    // Many keyboards won’t deliver 'ç' cleanly via GLUT. Provide fallbacks:
-    // turn right: ';' or 'p'
+    // ---- Player 2 movement: spec + layout fallbacks ----
     bool p2Forward  = input.keys['o'];
     bool p2Backward = input.keys['l'];
     bool p2TurnLeft = input.keys['k'];
@@ -77,16 +115,31 @@ void Game::updatePlayers(float dt) {
 
     player2.applyMovement(dt, p2Forward, p2Backward, p2TurnLeft, p2TurnRight);
 
-    // ---- Arm controls (always updated, independent of moving) ----
-    // P1: arm angle from mouse X across the window.
+    // ---- Arm controls (always updated) ----
     int winW = glutGet(GLUT_WINDOW_WIDTH);
     float p1Rel = mapMouseXToArmRel(input.mouseX, winW, player1.armMinRelRad, player1.armMaxRelRad);
     player1.setArmRelative(p1Rel);
 
-    // P2: keys '4' and '6' rotate arm.
     float armSpeed = Angle::degToRad(220.0f);
     if (input.keys['4']) player2.addArmRelative(+armSpeed * dt);
     if (input.keys['6']) player2.addArmRelative(-armSpeed * dt);
+
+    // ---- Shooting (edge-triggered) ----
+    bool mouseLeft = input.mouseLeftPressed;
+    bool key5 = input.keys['5'];
+
+    if (mouseLeft && !prevMouseLeft && shootCooldownP1 <= 0.0f) {
+        spawnBulletFromPlayer(player1);
+        shootCooldownP1 = 0.15f;
+    }
+
+    if (key5 && !prevKey5 && shootCooldownP2 <= 0.0f) {
+        spawnBulletFromPlayer(player2);
+        shootCooldownP2 = 0.15f;
+    }
+
+    prevMouseLeft = mouseLeft;
+    prevKey5 = key5;
 }
 
 void Game::updateBullets(float dt) {
@@ -114,7 +167,9 @@ void Game::handleCollisions() {
 
         Player* targets[2] = { &player1, &player2 };
         for (Player* p : targets) {
+            if (p->lives <= 0) continue;
             if ((int)p->id == b.ownerId) continue;
+
             if (Collision::circleCircle(b.pos, b.radius, p->pos, p->headRadius)) {
                 p->lives--;
                 b.alive = false;

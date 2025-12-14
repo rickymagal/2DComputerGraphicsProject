@@ -43,6 +43,8 @@ private:
     void handleCollisions();
     void checkGameOver();
 
+    void spawnBulletFromPlayer(const Player& p);
+
 private:
     GameState state;
 
@@ -57,6 +59,12 @@ private:
     InputState input;
 
     int winnerId;
+
+    bool prevMouseLeft;
+    bool prevKey5;
+
+    float shootCooldownP1;
+    float shootCooldownP2;
 };
 
 #endif
