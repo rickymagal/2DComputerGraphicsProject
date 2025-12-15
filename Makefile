@@ -7,7 +7,7 @@ SRC_DIR := src
 INC_DIR := include
 TP_DIR  := third_party
 
-# Executable
+# Executable (MANDATORY NAME)
 TARGET := trabalhocg
 
 # Include paths
@@ -34,12 +34,16 @@ SRCS := \
 # Object files
 OBJS := $(SRCS:.cpp=.o)
 
-# Default target
+# =========================
+# Targets
+# =========================
+
+# Default / required target
 all: $(TARGET)
 
 # Link
 $(TARGET): $(OBJS)
-	$(CXX) $(CXXFLAGS) -o $@ $(OBJS) $(LIBS)
+	$(CXX) $(CXXFLAGS) -o $(TARGET) $(OBJS) $(LIBS)
 
 # Compile
 %.o: %.cpp
